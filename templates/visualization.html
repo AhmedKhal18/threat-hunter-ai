@@ -1,0 +1,425 @@
+{% extends 'layout.html' %}
+
+{% block title %} - Attack Path Visualization{% endblock %}
+
+{% block head %}
+<!-- D3.js for visualizations -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
+<style>
+    .node {
+        stroke: #fff;
+        stroke-width: 1.5px;
+    }
+    
+    .link {
+        stroke: #999;
+        stroke-opacity: 0.6;
+    }
+    
+    .node text {
+        font-size: 10px;
+        fill: #fff;
+    }
+    
+    .tooltip {
+        position: absolute;
+        background-color: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 8px;
+        border-radius: 4px;
+        pointer-events: none;
+        font-size: 12px;
+        max-width: 250px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h4 class="mb-0"><i class="fas fa-project-diagram"></i> Attack Path Visualization</h4>
+                <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#helpModal">
+                    <i class="fas fa-question-circle"></i> Help
+                </button>
+            </div>
+            <div class="card-body">
+                <p>This page visualizes attack paths discovered in your network using Neo4j graph database.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Visualization Controls -->
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-sliders-h"></i> Controls</h5>
+            </div>
+            <div class="card-body">
+                {% if attack_paths %}
+                <!-- Path selection -->
+                <div class="mb-3">
+                    <label for="pathSelect" class="form-label">Select Attack Path</label>
+                    <select class="form-select" id="pathSelect">
+                        {% for path in attack_paths %}
+                        <option value="{{ path.id }}" {% if attack_path and attack_path.id == path.id %}selected{% endif %}>
+                            {{ path.severity }} Path - {{ path.timestamp.strftime('%Y-%m-%d') }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <!-- Visualization controls -->
+                <div class="mb-3">
+                    <label class="form-label">Visualization Controls</label>
+                    <div class="btn-group d-flex mb-2" role="group">
+                        <button class="btn btn-sm btn-outline-primary" id="zoomInBtn">
+                            <i class="fas fa-search-plus"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary" id="zoomOutBtn">
+                            <i class="fas fa-search-minus"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary" id="resetBtn">
+                            <i class="fas fa-sync"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Node highlighting -->
+                <div class="mb-3">
+                    <label class="form-label">Highlight Nodes</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="highlightInternal" checked>
+                        <label class="form-check-label" for="highlightInternal">
+                            Internal IPs
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="highlightExternal" checked>
+                        <label class="form-check-label" for="highlightExternal">
+                            External IPs
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="highlightMalware">
+                        <label class="form-check-label" for="highlightMalware">
+                            Malware/Exploits
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Display options -->
+                <div class="mb-3">
+                    <label class="form-label">Display Options</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="showLabels" checked>
+                        <label class="form-check-label" for="showLabels">
+                            Show Labels
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="showTooltips" checked>
+                        <label class="form-check-label" for="showTooltips">
+                            Show Tooltips
+                        </label>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <p>No attack paths available for visualization.</p>
+                    <a href="/analysis/run" class="btn btn-primary mt-2">Run Analysis</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Graph Visualization -->
+    <div class="col-md-9">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">
+                    {% if attack_path %}
+                    <span class="badge bg-{{ 'danger' if attack_path.severity == 'Critical' or attack_path.severity == 'High' else 'warning' if attack_path.severity == 'Medium' else 'success' if attack_path.severity == 'Low' else 'secondary' }}">
+                        {{ attack_path.severity }}
+                    </span>
+                    {% endif %}
+                    <span id="graph-title">
+                        {% if attack_path %}
+                        Attack Path #{{ attack_path.id }}
+                        {% else %}
+                        Attack Path Visualization
+                        {% endif %}
+                    </span>
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                <div id="graph-container" style="height: 600px; width: 100%;">
+                    {% if not attack_paths %}
+                    <div class="d-flex justify-content-center align-items-center h-100">
+                        <div class="text-center">
+                            <i class="fas fa-project-diagram fa-5x mb-3 text-muted"></i>
+                            <h5>No attack paths available</h5>
+                            <p>Run an analysis to discover potential attack paths</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% if attack_path %}
+            <div class="card-footer">
+                <div class="small text-muted">
+                    <strong>Description:</strong> {{ attack_path.description }}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Path Details -->
+{% if attack_path %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-warning">
+                <h5 class="mb-0"><i class="fas fa-info-circle"></i> Attack Path Details</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <!-- Path information -->
+                    <div class="col-md-6">
+                        <h6>Path Information</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <th>Path ID:</th>
+                                <td>{{ attack_path.id }}</td>
+                            </tr>
+                            <tr>
+                                <th>Severity:</th>
+                                <td>
+                                    <span class="badge bg-{{ 'danger' if attack_path.severity == 'Critical' or attack_path.severity == 'High' else 'warning' if attack_path.severity == 'Medium' else 'success' if attack_path.severity == 'Low' else 'secondary' }}">
+                                        {{ attack_path.severity }}
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>Detected:</th>
+                                <td>{{ attack_path.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            </tr>
+                            <tr>
+                                <th>Associated Analysis:</th>
+                                <td>
+                                    {% if attack_path.analysis_id %}
+                                    <a href="/analysis#{{ attack_path.analysis_id }}">Analysis #{{ attack_path.analysis_id }}</a>
+                                    {% else %}
+                                    N/A
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    
+                    <!-- Path description -->
+                    <div class="col-md-6">
+                        <h6>Description</h6>
+                        <p>{{ attack_path.description }}</p>
+                        
+                        <h6>Affected Assets</h6>
+                        <div id="affected-assets">
+                            <!-- Will be populated by JavaScript -->
+                            <p class="text-muted">Loading affected assets...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- MITRE ATT&CK Mapping -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-map"></i> MITRE ATT&CK Mapping</h5>
+            </div>
+            <div class="card-body">
+                {% if attack_path %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Technique</th>
+                                <th>ID</th>
+                                <th>Description</th>
+                                <th>Observed in Path</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- This would be populated with actual MITRE ATT&CK data related to the path -->
+                            <tr>
+                                <td>Network Service Scanning</td>
+                                <td><a href="https://attack.mitre.org/techniques/T1046/" target="_blank">T1046</a></td>
+                                <td>Adversaries may attempt to get a listing of services running on remote hosts and local network infrastructure devices.</td>
+                                <td><i class="fas fa-check text-success"></i></td>
+                            </tr>
+                            <tr>
+                                <td>Brute Force</td>
+                                <td><a href="https://attack.mitre.org/techniques/T1110/" target="_blank">T1110</a></td>
+                                <td>Adversaries may use brute force techniques to gain access to accounts when passwords are unknown or when password hashes are obtained.</td>
+                                <td><i class="fas fa-check text-success"></i></td>
+                            </tr>
+                            <tr>
+                                <td>Command and Control</td>
+                                <td><a href="https://attack.mitre.org/tactics/TA0011/" target="_blank">TA0011</a></td>
+                                <td>The command and control tactic represents how adversaries communicate with systems under their control within a victim network.</td>
+                                <td><i class="fas fa-check text-success"></i></td>
+                            </tr>
+                            <tr>
+                                <td>Exfiltration Over C2 Channel</td>
+                                <td><a href="https://attack.mitre.org/techniques/T1041/" target="_blank">T1041</a></td>
+                                <td>Adversaries may steal data by exfiltrating it over an existing command and control channel.</td>
+                                <td><i class="fas fa-check text-success"></i></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <p>Select an attack path to see MITRE ATT&CK framework mapping.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="helpModalLabel">Attack Path Visualization Help</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h5>Understanding the Visualization</h5>
+                <p>The attack path visualization shows how attackers may move through your network:</p>
+                
+                <h6>Node Types</h6>
+                <ul>
+                    <li><span class="badge bg-primary">Blue</span> - Internal IP addresses</li>
+                    <li><span class="badge bg-danger">Red</span> - External IP addresses (potential attackers)</li>
+                    <li><span class="badge bg-warning text-dark">Yellow</span> - Exploits</li>
+                    <li><span class="badge bg-info">Teal</span> - Malware</li>
+                </ul>
+                
+                <h6>Interactions</h6>
+                <ul>
+                    <li><strong>Hover over nodes</strong> to see details about each component</li>
+                    <li><strong>Drag nodes</strong> to rearrange the visualization</li>
+                    <li><strong>Zoom</strong> using the buttons or mouse wheel</li>
+                    <li><strong>Click on a node</strong> to highlight its connections</li>
+                </ul>
+                
+                <h5>Attack Path Analysis</h5>
+                <p>Attack paths represent possible routes that attackers could take through your network. They are generated by analyzing security logs and identifying patterns that could indicate multi-stage attacks.</p>
+                
+                <p>Use this visualization to:</p>
+                <ul>
+                    <li>Identify critical assets that might be targeted</li>
+                    <li>Understand the tactics, techniques, and procedures (TTPs) used by attackers</li>
+                    <li>Prioritize security controls and remediation efforts</li>
+                    <li>Simulate "what-if" scenarios by removing specific nodes or connections</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize the visualization with Neo4j data
+    const graphData = {{ neo4j_paths|safe }};
+    
+    if (graphData && graphData.length > 0) {
+        // Initialize the graph visualization
+        initGraph(graphData[0]);
+        
+        // Path selection handler
+        const pathSelect = document.getElementById('pathSelect');
+        if (pathSelect) {
+            pathSelect.addEventListener('change', function() {
+                const selectedPathId = this.value;
+                window.location.href = `/visualization/${selectedPathId}`;
+            });
+        }
+        
+        // Control button handlers
+        document.getElementById('zoomInBtn')?.addEventListener('click', function() {
+            zoomIn();
+        });
+        
+        document.getElementById('zoomOutBtn')?.addEventListener('click', function() {
+            zoomOut();
+        });
+        
+        document.getElementById('resetBtn')?.addEventListener('click', function() {
+            resetView();
+        });
+        
+        // Toggle handlers
+        document.getElementById('highlightInternal')?.addEventListener('change', function() {
+            toggleNodeType('IP', 'internal', this.checked);
+        });
+        
+        document.getElementById('highlightExternal')?.addEventListener('change', function() {
+            toggleNodeType('IP', 'external', this.checked);
+        });
+        
+        document.getElementById('highlightMalware')?.addEventListener('change', function() {
+            toggleNodeType('Malware', null, this.checked);
+            toggleNodeType('Exploit', null, this.checked);
+        });
+        
+        document.getElementById('showLabels')?.addEventListener('change', function() {
+            toggleLabels(this.checked);
+        });
+        
+        document.getElementById('showTooltips')?.addEventListener('change', function() {
+            toggleTooltips(this.checked);
+        });
+        
+        // Populate affected assets
+        const affectedAssetsDiv = document.getElementById('affected-assets');
+        if (affectedAssetsDiv) {
+            let internalNodes = graphData[0].nodes.filter(n => 
+                n.properties && n.properties.is_internal === true
+            );
+            
+            if (internalNodes.length > 0) {
+                let html = '<ul class="list-group list-group-flush">';
+                internalNodes.forEach(node => {
+                    html += `<li class="list-group-item p-2">${node.id}</li>`;
+                });
+                html += '</ul>';
+                affectedAssetsDiv.innerHTML = html;
+            } else {
+                affectedAssetsDiv.innerHTML = '<p class="text-muted">No internal assets affected.</p>';
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

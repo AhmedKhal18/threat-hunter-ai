@@ -1,0 +1,194 @@
+{% extends 'layout.html' %}
+
+{% block title %} - Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="fas fa-tachometer-alt"></i> Security Dashboard</h4>
+            </div>
+            <div class="card-body">
+                <p>Welcome to Autonomous Threat Hunter AI. This system uses advanced AI techniques including LangChain, GPT-4, and Reinforcement Learning to detect and analyze security threats.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Stats cards -->
+    <div class="col-md-4">
+        <div class="card text-center h-100">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="fas fa-file-alt"></i> Logs</h5>
+            </div>
+            <div class="card-body">
+                <h2 class="display-4">{{ log_count }}</h2>
+                <p class="lead">Security logs ingested</p>
+                <a href="/logs" class="btn btn-outline-primary">View Logs</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center h-100">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-brain"></i> Analyses</h5>
+            </div>
+            <div class="card-body">
+                <h2 class="display-4">{{ analysis_count }}</h2>
+                <p class="lead">AI-powered analyses</p>
+                <a href="/analysis" class="btn btn-outline-primary">View Analyses</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center h-100">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0"><i class="fas fa-project-diagram"></i> Attack Paths</h5>
+            </div>
+            <div class="card-body">
+                <h2 class="display-4">{{ attack_path_count }}</h2>
+                <p class="lead">Identified attack paths</p>
+                <a href="/visualization" class="btn btn-outline-primary">View Visualizations</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Latest Analysis -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-warning">
+                <h5 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Latest Threat Analysis</h5>
+            </div>
+            <div class="card-body">
+                {% if latest_analysis %}
+                <div class="alert alert-{{ 'danger' if latest_analysis.threat_level == 'Critical' or latest_analysis.threat_level == 'High' else 'warning' if latest_analysis.threat_level == 'Medium' else 'info' if latest_analysis.threat_level == 'Low' else 'secondary' }}">
+                    <h5>Threat Level: {{ latest_analysis.threat_level }}</h5>
+                    <p class="mb-2">{{ latest_analysis.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                </div>
+                <h5>Summary:</h5>
+                <p>{{ latest_analysis.summary[:200] }}{% if latest_analysis.summary|length > 200 %}...{% endif %}</p>
+                <h5>Recommended Actions:</h5>
+                <p>{{ latest_analysis.recommended_actions[:200] }}{% if latest_analysis.recommended_actions|length > 200 %}...{% endif %}</p>
+                <a href="/analysis" class="btn btn-outline-primary">View Full Analysis</a>
+                {% else %}
+                <div class="alert alert-info">
+                    <p>No analyses have been performed yet.</p>
+                </div>
+                <a href="/analysis" class="btn btn-primary">Run Analysis</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Log Severity Chart -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Log Severity Distribution</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="severityChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Quick Actions -->
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-bolt"></i> Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <form action="/logs/generate" method="post">
+                            <div class="input-group mb-3">
+                                <input type="number" class="form-control" name="count" placeholder="Count" value="50" min="1" max="500">
+                                <button class="btn btn-outline-secondary" type="submit">Generate Logs</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="col-md-3">
+                        <form action="/analysis/run" method="post">
+                            <div class="input-group mb-3">
+                                <input type="number" class="form-control" name="hours" placeholder="Hours" value="24" min="1" max="168">
+                                <button class="btn btn-outline-secondary" type="submit">Run Analysis</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="col-md-3">
+                        <form action="/rl_agent/train" method="post">
+                            <div class="input-group mb-3">
+                                <input type="number" class="form-control" name="iterations" placeholder="Iterations" value="100" min="10" max="10000">
+                                <button class="btn btn-outline-secondary" type="submit">Train RL Agent</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="col-md-3">
+                        <a href="/visualization" class="btn btn-outline-primary w-100">View Attack Paths</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Severity Chart
+    var severityData = {{ severity_data|safe }};
+    var ctx = document.getElementById('severityChart').getContext('2d');
+    var severityChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: severityData.labels || ["No Data"],
+            datasets: [{
+                data: severityData.data || [1],
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.7)',
+                    'rgba(255, 159, 64, 0.7)',
+                    'rgba(255, 205, 86, 0.7)',
+                    'rgba(75, 192, 192, 0.7)',
+                    'rgba(54, 162, 235, 0.7)'
+                ],
+                borderColor: [
+                    'rgb(255, 99, 132)',
+                    'rgb(255, 159, 64)',
+                    'rgb(255, 205, 86)',
+                    'rgb(75, 192, 192)',
+                    'rgb(54, 162, 235)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'right',
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            var label = context.label || '';
+                            var value = context.raw || 0;
+                            var total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            var percentage = Math.round((value / total) * 100);
+                            return label + ': ' + value + ' (' + percentage + '%)';
+                        }
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

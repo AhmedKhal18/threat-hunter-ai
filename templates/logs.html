@@ -1,0 +1,248 @@
+{% extends 'layout.html' %}
+
+{% block title %} - Security Logs{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h4 class="mb-0"><i class="fas fa-file-alt"></i> Security Logs</h4>
+                <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#generateLogsModal">
+                    <i class="fas fa-plus"></i> Generate Logs
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- Filter controls -->
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <form method="get" action="/logs" class="row g-3">
+                            <div class="col-md-3">
+                                <div class="input-group">
+                                    <span class="input-group-text">Type</span>
+                                    <select name="log_type" class="form-select">
+                                        <option value="">All</option>
+                                        <option value="Suricata">Suricata</option>
+                                        <option value="Firewall">Firewall</option>
+                                        <option value="Windows">Windows</option>
+                                        <option value="Linux">Linux</option>
+                                        <option value="Web">Web Server</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="input-group">
+                                    <span class="input-group-text">Min Severity</span>
+                                    <select name="min_severity" class="form-select">
+                                        <option value="1">1 (Low)</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3 (Medium)</option>
+                                        <option value="4">4</option>
+                                        <option value="5">5 (High)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="input-group">
+                                    <span class="input-group-text">IP</span>
+                                    <input type="text" name="ip" class="form-control" placeholder="Source or Destination IP">
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <button type="submit" class="btn btn-primary w-100">Filter</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Log table -->
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th>
+                                <th>Timestamp</th>
+                                <th>Type</th>
+                                <th>Source IP</th>
+                                <th>Destination IP</th>
+                                <th>Protocol/Port</th>
+                                <th>Severity</th>
+                                <th>Alert</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in logs.items %}
+                            <tr class="
+                                {% if log.alert_severity == 5 %}table-danger{% 
+                                elif log.alert_severity == 4 %}table-warning{% 
+                                elif log.alert_severity == 3 %}table-info{% 
+                                elif log.alert_severity == 2 %}table-light{% 
+                                else %}{% endif %}
+                            ">
+                                <td>{{ log.id }}</td>
+                                <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>{{ log.log_type }}</td>
+                                <td>{{ log.source_ip }}</td>
+                                <td>{{ log.destination_ip }}</td>
+                                <td>{{ log.protocol }}{% if log.port %}/{{ log.port }}{% endif %}</td>
+                                <td>
+                                    <span class="badge bg-{% if log.alert_severity == 5 %}danger{% 
+                                    elif log.alert_severity == 4 %}warning{% 
+                                    elif log.alert_severity == 3 %}info{% 
+                                    elif log.alert_severity == 2 %}secondary{% 
+                                    else %}light text-dark{% endif %}">
+                                        {{ log.alert_severity }}
+                                    </span>
+                                </td>
+                                <td>{{ log.alert_message }}</td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-info view-log-btn" data-bs-toggle="modal" data-bs-target="#viewLogModal" data-log-id="{{ log.id }}" data-log-raw="{{ log.raw_log }}">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="9" class="text-center">No logs found. <a href="#" data-bs-toggle="modal" data-bs-target="#generateLogsModal">Generate some logs</a> to get started.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <nav aria-label="Log pagination">
+                    <ul class="pagination justify-content-center">
+                        {% if logs.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('logs', page=logs.prev_num) }}">Previous</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">Previous</span>
+                        </li>
+                        {% endif %}
+
+                        {% for page_num in logs.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                            {% if page_num %}
+                                {% if page_num == logs.page %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ page_num }}</span>
+                                </li>
+                                {% else %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('logs', page=page_num) }}">{{ page_num }}</a>
+                                </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if logs.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('logs', page=logs.next_num) }}">Next</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">Next</span>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            <div class="card-footer text-muted">
+                Showing {{ logs.items|length }} of {{ logs.total }} logs
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Generate Logs Modal -->
+<div class="modal fade" id="generateLogsModal" tabindex="-1" aria-labelledby="generateLogsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="generateLogsModalLabel">Generate Security Logs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="/logs/generate" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="logCount" class="form-label">Number of logs to generate</label>
+                        <input type="number" class="form-control" id="logCount" name="count" value="50" min="1" max="500">
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="includeAttack" name="include_attack" value="yes" checked>
+                            <label class="form-check-label" for="includeAttack">
+                                Include simulated attack pattern
+                            </label>
+                        </div>
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> This will generate simulated Suricata security logs for testing purposes.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Generate Logs</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- View Log Modal -->
+<div class="modal fade" id="viewLogModal" tabindex="-1" aria-labelledby="viewLogModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="viewLogModalLabel">Log Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h6>Log ID: <span id="log-id-display"></span></h6>
+                </div>
+                <div class="mb-3">
+                    <label for="rawLogContent" class="form-label">Raw Log Content</label>
+                    <pre id="rawLogContent" class="form-control" style="min-height: 250px; white-space: pre-wrap;"></pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Setup view log modal handlers
+    const viewLogButtons = document.querySelectorAll('.view-log-btn');
+    viewLogButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const logId = this.getAttribute('data-log-id');
+            let rawLog = this.getAttribute('data-log-raw');
+            
+            // Try to parse and format JSON if possible
+            try {
+                const parsedLog = JSON.parse(rawLog);
+                rawLog = JSON.stringify(parsedLog, null, 2);
+            } catch (e) {
+                // Keep as is if not valid JSON
+            }
+            
+            document.getElementById('log-id-display').textContent = logId;
+            document.getElementById('rawLogContent').textContent = rawLog;
+        });
+    });
+});
+</script>
+{% endblock %}

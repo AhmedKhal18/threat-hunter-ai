@@ -1,0 +1,434 @@
+{% extends 'layout.html' %}
+
+{% block title %} - RL Agent{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="fas fa-robot"></i> Reinforcement Learning Agent</h4>
+            </div>
+            <div class="card-body">
+                <p>This page allows you to train and evaluate a Reinforcement Learning agent for autonomous threat hunting. The agent uses Proximal Policy Optimization (PPO) to learn optimal security response policies.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Agent Control Panel -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-sliders-h"></i> Agent Control</h5>
+            </div>
+            <div class="card-body">
+                <!-- Training Form -->
+                <div class="mb-4">
+                    <h5>Train Agent</h5>
+                    <form action="/rl_agent/train" method="post">
+                        <div class="mb-3">
+                            <label for="iterations" class="form-label">Training Iterations</label>
+                            <input type="range" class="form-range" id="iterations" name="iterations" min="100" max="10000" step="100" value="1000" oninput="this.nextElementSibling.value = this.value">
+                            <output>1000</output>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="use_real_logs" name="use_real_logs" value="yes">
+                                <label class="form-check-label" for="use_real_logs">
+                                    Use real logs from database (if available)
+                                </label>
+                            </div>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-play"></i> Train Agent
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Evaluation Form -->
+                <div class="mb-3">
+                    <h5>Evaluate Agent</h5>
+                    <form id="evaluate-form" action="/rl_agent/evaluate" method="post">
+                        <div class="mb-3">
+                            <label for="session_id" class="form-label">Agent Model</label>
+                            <select class="form-select" id="session_id" name="session_id">
+                                <option value="">Most recent trained model</option>
+                                {% for session in training_sessions %}
+                                <option value="{{ session.id }}">Session #{{ session.id }} ({{ session.start_time.strftime('%Y-%m-%d %H:%M:%S') }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-info">
+                                <i class="fas fa-flask"></i> Evaluate Agent
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Training History -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-history"></i> Training History</h5>
+            </div>
+            <div class="card-body">
+                {% if training_sessions %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Date</th>
+                                <th>Iterations</th>
+                                <th>Reward</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for session in training_sessions %}
+                            <tr>
+                                <td>{{ session.id }}</td>
+                                <td>{{ session.start_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>{{ session.iterations }}</td>
+                                <td>{{ session.reward|round(2) }}</td>
+                                <td>
+                                    {% if session.end_time %}
+                                    <span class="badge bg-success">Completed</span>
+                                    {% else %}
+                                    <span class="badge bg-warning text-dark">In Progress</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    No training sessions found. Start by training the agent.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agent Performance & Metrics -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-warning">
+                <h5 class="mb-0"><i class="fas fa-chart-line"></i> Agent Performance</h5>
+            </div>
+            <div class="card-body">
+                {% if latest_session and latest_session.end_time %}
+                <div class="row">
+                    <!-- Reward Chart -->
+                    <div class="col-md-6 mb-4">
+                        <h6>Reward Progress</h6>
+                        <canvas id="rewardChart" height="250"></canvas>
+                    </div>
+                    
+                    <!-- Metrics -->
+                    <div class="col-md-6 mb-4">
+                        <h6>Performance Metrics</h6>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-6 mb-3">
+                                        <div class="text-center">
+                                            <h5>{{ latest_session.reward|round(2) }}</h5>
+                                            <p class="text-muted mb-0">Final Reward</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 mb-3">
+                                        <div class="text-center">
+                                            <h5>{{ latest_session.iterations }}</h5>
+                                            <p class="text-muted mb-0">Iterations</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <hr>
+                                
+                                <div id="evaluation-results">
+                                    <p class="text-center text-muted">Run evaluation to see detailed metrics</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Model Insights -->
+                <div class="row">
+                    <div class="col-md-12">
+                        <h6>Agent Decision Making</h6>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <p class="mb-0">The RL agent is trained to make the following decisions based on security log observations:</p>
+                                <ul class="mt-2">
+                                    <li><strong>Ignore</strong>: Low risk events that don't require attention</li>
+                                    <li><strong>Flag for review</strong>: Suspicious events that need human analysis</li>
+                                    <li><strong>Block source IP</strong>: Prevent further access from a potentially malicious source</li>
+                                    <li><strong>Block destination IP</strong>: Prevent access to a potentially compromised system</li>
+                                    <li><strong>Collect more data</strong>: Request additional information before making a decision</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <p>No completed training sessions found. Train the agent to see performance metrics.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Evaluation Results -->
+<div class="modal fade" id="evaluationResultsModal" tabindex="-1" aria-labelledby="evaluationResultsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="evaluationResultsModalLabel">Agent Evaluation Results</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modal-evaluation-content">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Evaluating agent performance...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize charts if session data exists
+    {% if latest_session and latest_session.end_time %}
+    // Sample reward progress chart (in a real app, this would use actual training data)
+    const ctx = document.getElementById('rewardChart').getContext('2d');
+    const rewardChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: Array.from({length: 10}, (_, i) => `Step ${i+1}`),
+            datasets: [{
+                label: 'Reward',
+                data: [
+                    0, 
+                    {{ latest_session.reward * 0.2 }}, 
+                    {{ latest_session.reward * 0.4 }}, 
+                    {{ latest_session.reward * 0.3 }}, 
+                    {{ latest_session.reward * 0.5 }}, 
+                    {{ latest_session.reward * 0.6 }}, 
+                    {{ latest_session.reward * 0.7 }}, 
+                    {{ latest_session.reward * 0.8 }}, 
+                    {{ latest_session.reward * 0.9 }}, 
+                    {{ latest_session.reward }}
+                ],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+    {% endif %}
+
+    // Handle evaluation form submission
+    const evaluateForm = document.getElementById('evaluate-form');
+    
+    if (evaluateForm) {
+        evaluateForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Show the modal
+            const evaluationModal = new bootstrap.Modal(document.getElementById('evaluationResultsModal'));
+            evaluationModal.show();
+            
+            // Get form data
+            const formData = new FormData(evaluateForm);
+            
+            // Make AJAX request
+            fetch('/rl_agent/evaluate', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Update modal content
+                const modalContent = document.getElementById('modal-evaluation-content');
+                
+                if (data.error) {
+                    modalContent.innerHTML = `
+                        <div class="alert alert-danger">
+                            <strong>Error:</strong> ${data.error}
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Calculate averages
+                const precision = data.overall.precision.toFixed(3);
+                const recall = data.overall.recall.toFixed(3);
+                const f1Score = data.overall.f1_score.toFixed(3);
+                
+                // Generate content
+                let content = `
+                    <div class="mb-4">
+                        <h6>Overall Metrics</h6>
+                        <div class="row text-center">
+                            <div class="col-md-4">
+                                <div class="card bg-light mb-3">
+                                    <div class="card-body py-2">
+                                        <h3>${precision}</h3>
+                                        <p class="text-muted mb-0">Precision</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card bg-light mb-3">
+                                    <div class="card-body py-2">
+                                        <h3>${recall}</h3>
+                                        <p class="text-muted mb-0">Recall</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card bg-light mb-3">
+                                    <div class="card-body py-2">
+                                        <h3>${f1Score}</h3>
+                                        <p class="text-muted mb-0">F1 Score</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h6>Classification Results</h6>
+                        <table class="table table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Metric</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>True Positives</td>
+                                    <td>${data.overall.true_positives}</td>
+                                </tr>
+                                <tr>
+                                    <td>False Positives</td>
+                                    <td>${data.overall.false_positives}</td>
+                                </tr>
+                                <tr>
+                                    <td>True Negatives</td>
+                                    <td>${data.overall.true_negatives}</td>
+                                </tr>
+                                <tr>
+                                    <td>False Negatives</td>
+                                    <td>${data.overall.false_negatives}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div>
+                        <h6>Actions Taken</h6>
+                        <table class="table table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Action</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>IPs Blocked</td>
+                                    <td>${data.overall.blocked_ips}</td>
+                                </tr>
+                                <tr>
+                                    <td>Logs Flagged</td>
+                                    <td>${data.overall.flagged_logs}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                
+                modalContent.innerHTML = content;
+                
+                // Also update the evaluation results section on the main page
+                const evaluationResults = document.getElementById('evaluation-results');
+                if (evaluationResults) {
+                    evaluationResults.innerHTML = `
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <h5>${precision}</h5>
+                                <p class="text-muted mb-0">Precision</p>
+                            </div>
+                            <div class="col-4">
+                                <h5>${recall}</h5>
+                                <p class="text-muted mb-0">Recall</p>
+                            </div>
+                            <div class="col-4">
+                                <h5>${f1Score}</h5>
+                                <p class="text-muted mb-0">F1 Score</p>
+                            </div>
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const modalContent = document.getElementById('modal-evaluation-content');
+                modalContent.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>Error:</strong> Failed to evaluate agent.
+                    </div>
+                `;
+            });
+        });
+    }
+});
+</script>
+{% endblock %}
