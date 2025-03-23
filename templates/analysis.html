@@ -133,16 +133,12 @@
                                 
                                 <!-- Attack Paths -->
                                 {% set attack_paths = attack_paths|default([]) %}
-                                {% set related_paths = [] %}
-                                {% for path in attack_paths if path.analysis_id == analysis.id %}
-                                    {% do related_paths.append(path) %}
-                                {% endfor %}
                                 
-                                {% if related_paths %}
+                                {% if attack_paths|selectattr('analysis_id', 'equalto', analysis.id)|list %}
                                 <h5>Attack Paths</h5>
                                 <div class="mb-3">
                                     <div class="list-group">
-                                        {% for path in related_paths %}
+                                        {% for path in attack_paths if path.analysis_id == analysis.id %}
                                         <a href="/visualization/{{ path.id }}" class="list-group-item list-group-item-action">
                                             <div class="d-flex w-100 justify-content-between">
                                                 <h6 class="mb-1">{{ path.severity }} Severity Attack Path</h6>
