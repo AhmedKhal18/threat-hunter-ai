@@ -238,7 +238,7 @@ def identify_attack_patterns(logs):
 
 def correlate_events(logs):
     """
-    Correlate related events to identify multi-stage attacks.
+    Correlate related events to identify multi-stage attacks using OpenAI API.
     
     Args:
         logs (list): List of log dictionaries
@@ -247,48 +247,60 @@ def correlate_events(logs):
         list: Correlated event chains
     """
     try:
+        if not OPENAI_API_KEY or not openai_client:
+            logger.error("OpenAI API key not found")
+            return [{"attack": "Error", "logs": "unknown", "stages": ["unknown"], "severity": "unknown"}]
+        
         # Sort logs by timestamp
         sorted_logs = sorted(logs, key=lambda x: x['timestamp'] if hasattr(x['timestamp'], 'strftime') else x['timestamp'])
         
         # Prepare logs for correlation analysis
         log_text = format_logs_for_analysis(sorted_logs)
         
-        # Create the prompt for event correlation
-        prompt = PromptTemplate(
-            input_variables=["logs"],
-            template="""
-            You are a cybersecurity correlation analyst. Review these chronologically ordered security logs and identify related events that might constitute multi-stage attacks.
-            For each correlated chain, provide:
-            1. A name or description of the potential attack
-            2. The log IDs that are part of this chain
-            3. The attack stages in order (e.g., reconnaissance -> exploitation -> lateral movement)
-            4. Overall severity assessment
-            
-            Logs:
-            {logs}
-            
-            Format your response as a JSON array of correlated chains.
-            """
-        )
+        # Create the system prompt for correlation analysis
+        system_prompt = """You are a cybersecurity correlation analyst. Review these chronologically ordered security logs and identify related events that might constitute multi-stage attacks.
+        For each correlated chain, provide:
+        1. A name or description of the potential attack
+        2. The log IDs that are part of this chain
+        3. The attack stages in order (e.g., reconnaissance -> exploitation -> lateral movement)
+        4. Overall severity assessment
+        
+        Format your response as a JSON array of correlated chains.
+        """
+        
+        # Create the human message with logs
+        human_prompt = f"""Review these chronologically ordered security logs and identify related events:
+
+        {log_text}
+        
+        Provide your analysis as a JSON array of attack chains.
+        """
         
         # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
         # do not change this unless explicitly requested by the user
-        chat_model = ChatOpenAI(
-            model_name="gpt-4o",
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": human_prompt}
+            ],
             temperature=0.2,
-            openai_api_key=OPENAI_API_KEY
+            response_format={"type": "json_object"}
         )
-        
-        # Create the chain
-        chain = LLMChain(llm=chat_model, prompt=prompt)
-        
-        # Run the chain
-        response = chain.run(logs=log_text)
         
         # Parse the response
         try:
-            correlated_chains = json.loads(response)
-            return correlated_chains
+            content = response.choices[0].message.content
+            chains = json.loads(content)
+            # If it's a nested JSON object with a chains/correlations key, extract just the chains
+            if isinstance(chains, dict):
+                if "chains" in chains:
+                    chains = chains["chains"]
+                elif "correlations" in chains:
+                    chains = chains["correlations"]
+                elif "attacks" in chains:
+                    chains = chains["attacks"]
+            return chains
         except json.JSONDecodeError:
             logger.error("Failed to parse event correlation response as JSON")
             # Return a fallback response
