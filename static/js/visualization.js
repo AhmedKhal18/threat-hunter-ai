@@ -7,6 +7,67 @@ let links = [];
 let tooltip;
 let zoom;
 
+// MITRE ATT&CK Technique details cache
+const mitreCache = {
+    "T1046": {
+        name: "Network Service Scanning",
+        description: "Adversaries may attempt to get a listing of services running on remote hosts and local network infrastructure devices.",
+        tactic: "Reconnaissance",
+        indicators: [
+            "Multiple connection attempts to different ports",
+            "SYN scans detected in network traffic"
+        ],
+        mitigations: [
+            "Filter network traffic to only allow authorized ports",
+            "Implement network scanning detection tools"
+        ]
+    },
+    "T1110": {
+        name: "Brute Force",
+        description: "Adversaries may use brute force techniques to gain access to accounts when passwords are unknown or when password hashes are obtained.",
+        tactic: "Credential Access",
+        indicators: [
+            "Multiple failed authentication attempts",
+            "Authentication attempts with common username/password combinations"
+        ],
+        mitigations: [
+            "Implement account lockout policies",
+            "Use multi-factor authentication",
+            "Enforce strong password policies"
+        ]
+    },
+    "T1059": {
+        name: "Command and Scripting Interpreter",
+        description: "Adversaries may abuse command and script interpreters to execute commands, scripts, or binaries.",
+        tactic: "Execution",
+        indicators: [
+            "Execution of scripts or binaries from unusual locations",
+            "PowerShell commands with encoded parameters",
+            "Command line with suspicious arguments"
+        ],
+        mitigations: [
+            "Restrict script execution policies",
+            "Implement application whitelisting",
+            "Monitor command-line arguments"
+        ]
+    },
+    "T1041": {
+        name: "Exfiltration Over C2 Channel",
+        description: "Adversaries may steal data by exfiltrating it over an existing command and control channel.",
+        tactic: "Exfiltration",
+        indicators: [
+            "Large data transfers to external IPs",
+            "Suspicious outbound connections",
+            "Regular beaconing to external systems"
+        ],
+        mitigations: [
+            "Implement data loss prevention solutions",
+            "Monitor network traffic for unusual patterns",
+            "Block unauthorized communication channels"
+        ]
+    }
+};
+
 // Initialize the graph visualization
 function initGraph(graphData) {
     // Clear any existing SVG
@@ -346,4 +407,154 @@ function toggleLabels(visible) {
 function toggleTooltips(visible) {
     // This function just sets a flag for the showTooltip function
     // No need to manipulate DOM here
+}
+
+// MITRE ATT&CK Technique display functions
+document.addEventListener('DOMContentLoaded', function() {
+    // Set up event handlers for technique rows
+    const techniqueRows = document.querySelectorAll('.technique-row');
+    techniqueRows.forEach(row => {
+        row.addEventListener('click', function() {
+            const techniqueId = this.getAttribute('data-technique-id');
+            showTechniqueDetails(techniqueId);
+        });
+    });
+    
+    // Set up event handlers for buttons
+    document.getElementById('zoomInBtn')?.addEventListener('click', zoomIn);
+    document.getElementById('zoomOutBtn')?.addEventListener('click', zoomOut);
+    document.getElementById('resetBtn')?.addEventListener('click', resetView);
+    
+    document.getElementById('highlightInternal')?.addEventListener('change', function() {
+        toggleNodeType('IP', 'internal', this.checked);
+    });
+    
+    document.getElementById('highlightExternal')?.addEventListener('change', function() {
+        toggleNodeType('IP', 'external', this.checked);
+    });
+    
+    document.getElementById('highlightMalware')?.addEventListener('change', function() {
+        toggleNodeType('Malware', null, this.checked);
+        toggleNodeType('Exploit', null, this.checked);
+    });
+    
+    document.getElementById('showLabels')?.addEventListener('change', function() {
+        toggleLabels(this.checked);
+    });
+    
+    document.getElementById('showTooltips')?.addEventListener('change', function() {
+        toggleTooltips(this.checked);
+    });
+    
+    // Initialize affected assets
+    populateAffectedAssets();
+});
+
+// Display technique details in the sidebar
+function showTechniqueDetails(techniqueId) {
+    // Get technique details from cache
+    const technique = mitreCache[techniqueId];
+    if (!technique) {
+        console.error(`Technique ${techniqueId} not found in cache`);
+        return;
+    }
+    
+    // Hide "no technique selected" message and show details
+    document.getElementById('noTechniqueSelected').style.display = 'none';
+    document.getElementById('techniqueDetails').style.display = 'block';
+    
+    // Update technique details in sidebar
+    document.getElementById('techniqueName').textContent = technique.name;
+    document.getElementById('techniqueId').textContent = techniqueId;
+    document.getElementById('techniqueDescription').textContent = technique.description;
+    
+    // Update indicators list
+    const indicatorsList = document.getElementById('techniqueIndicators');
+    indicatorsList.innerHTML = '';
+    technique.indicators.forEach(indicator => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = indicator;
+        indicatorsList.appendChild(li);
+    });
+    
+    // Update mitigations list
+    const mitigationsList = document.getElementById('techniqueMitigations');
+    mitigationsList.innerHTML = '';
+    technique.mitigations.forEach(mitigation => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = mitigation;
+        mitigationsList.appendChild(li);
+    });
+    
+    // Highlight the selected row in the table
+    document.querySelectorAll('.technique-row').forEach(row => {
+        row.classList.remove('table-active');
+    });
+    document.querySelector(`.technique-row[data-technique-id="${techniqueId}"]`)?.classList.add('table-active');
+}
+
+// Show technique details in modal
+function showTechniqueModal(techniqueId) {
+    const technique = mitreCache[techniqueId];
+    if (!technique) return;
+    
+    const modalContent = document.getElementById('modalTechniqueDetails');
+    modalContent.innerHTML = `
+        <h4>${technique.name}</h4>
+        <span class="badge bg-danger mb-3">${techniqueId}</span>
+        <p class="mb-4">${technique.description}</p>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <h5>Indicators</h5>
+                <ul class="list-group list-group-flush mb-3">
+                    ${technique.indicators.map(i => `<li class="list-group-item">${i}</li>`).join('')}
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <h5>Mitigations</h5>
+                <ul class="list-group list-group-flush mb-3">
+                    ${technique.mitigations.map(m => `<li class="list-group-item">${m}</li>`).join('')}
+                </ul>
+            </div>
+        </div>
+    `;
+    
+    // Update the "View on MITRE ATT&CK" link
+    document.getElementById('viewMitreLink').href = `https://attack.mitre.org/techniques/${techniqueId}/`;
+    
+    // Show the modal
+    const techniqueModal = new bootstrap.Modal(document.getElementById('techniqueModal'));
+    techniqueModal.show();
+}
+
+// Populate the affected assets section
+function populateAffectedAssets() {
+    const affectedAssetsDiv = document.getElementById('affected-assets');
+    if (!affectedAssetsDiv) return;
+    
+    // Get internal IP nodes from graph
+    const internalIPs = nodes.filter(n => n.type === 'IP' && n.internal);
+    
+    // Update the affected assets div
+    if (internalIPs.length > 0) {
+        let html = '<div class="list-group">';
+        internalIPs.forEach(node => {
+            html += `
+                <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${node.id}</strong>
+                        <small class="d-block text-muted">Internal Asset</small>
+                    </div>
+                    <span class="badge bg-danger rounded-pill">At Risk</span>
+                </div>
+            `;
+        });
+        html += '</div>';
+        affectedAssetsDiv.innerHTML = html;
+    } else {
+        affectedAssetsDiv.innerHTML = '<p>No affected assets identified in this attack path.</p>';
+    }
 }

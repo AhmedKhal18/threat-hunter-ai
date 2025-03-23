@@ -247,54 +247,230 @@
     <div class="col-md-12">
         <div class="card">
             <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="fas fa-map"></i> MITRE ATT&CK Mapping</h5>
+                <h5 class="mb-0"><i class="fas fa-shield-alt"></i> MITRE ATT&CK Mapping</h5>
             </div>
             <div class="card-body">
                 {% if attack_path %}
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Technique</th>
-                                <th>ID</th>
-                                <th>Description</th>
-                                <th>Observed in Path</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- This would be populated with actual MITRE ATT&CK data related to the path -->
-                            <tr>
-                                <td>Network Service Scanning</td>
-                                <td><a href="https://attack.mitre.org/techniques/T1046/" target="_blank">T1046</a></td>
-                                <td>Adversaries may attempt to get a listing of services running on remote hosts and local network infrastructure devices.</td>
-                                <td><i class="fas fa-check text-success"></i></td>
-                            </tr>
-                            <tr>
-                                <td>Brute Force</td>
-                                <td><a href="https://attack.mitre.org/techniques/T1110/" target="_blank">T1110</a></td>
-                                <td>Adversaries may use brute force techniques to gain access to accounts when passwords are unknown or when password hashes are obtained.</td>
-                                <td><i class="fas fa-check text-success"></i></td>
-                            </tr>
-                            <tr>
-                                <td>Command and Control</td>
-                                <td><a href="https://attack.mitre.org/tactics/TA0011/" target="_blank">TA0011</a></td>
-                                <td>The command and control tactic represents how adversaries communicate with systems under their control within a victim network.</td>
-                                <td><i class="fas fa-check text-success"></i></td>
-                            </tr>
-                            <tr>
-                                <td>Exfiltration Over C2 Channel</td>
-                                <td><a href="https://attack.mitre.org/techniques/T1041/" target="_blank">T1041</a></td>
-                                <td>Adversaries may steal data by exfiltrating it over an existing command and control channel.</td>
-                                <td><i class="fas fa-check text-success"></i></td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <p class="mb-3">
+                    This attack path has been mapped to the following MITRE ATT&CK techniques. 
+                    These techniques represent the tactics and procedures that may be used by threat actors.
+                </p>
+                
+                <div class="mb-3">
+                    <div class="row">
+                        <div class="col-md-7">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover" id="mitreTable">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Technique</th>
+                                            <th>ID</th>
+                                            <th>Tactic</th>
+                                            <th>Confidence</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% if attack_path.mitre_techniques %}
+                                            {% set techniques = attack_path.mitre_techniques|safe|from_json %}
+                                            {% for technique in techniques %}
+                                            <tr class="technique-row" data-technique-id="{{ technique.id }}" 
+                                                data-bs-toggle="tooltip" title="Click for more details">
+                                                <td>{{ technique.name }}</td>
+                                                <td>
+                                                    <a href="https://attack.mitre.org/techniques/{{ technique.id }}/" 
+                                                       target="_blank" class="badge bg-danger text-decoration-none">
+                                                        {{ technique.id }}
+                                                    </a>
+                                                </td>
+                                                <td>{{ technique.tactic }}</td>
+                                                <td>
+                                                    <span class="badge rounded-pill bg-{{ 'success' if technique.confidence == 'High' 
+                                                                             else 'warning' if technique.confidence == 'Medium'
+                                                                             else 'info' }}">
+                                                        {{ technique.confidence|default('Low') }}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        {% else %}
+                                            <!-- Default techniques if none are specified in the attack path -->
+                                            <tr class="technique-row" data-technique-id="T1046" data-bs-toggle="tooltip" title="Click for more details">
+                                                <td>Network Service Scanning</td>
+                                                <td>
+                                                    <a href="https://attack.mitre.org/techniques/T1046/" 
+                                                       target="_blank" class="badge bg-danger text-decoration-none">
+                                                        T1046
+                                                    </a>
+                                                </td>
+                                                <td>Reconnaissance</td>
+                                                <td><span class="badge rounded-pill bg-success">High</span></td>
+                                            </tr>
+                                            <tr class="technique-row" data-technique-id="T1110" data-bs-toggle="tooltip" title="Click for more details">
+                                                <td>Brute Force</td>
+                                                <td>
+                                                    <a href="https://attack.mitre.org/techniques/T1110/" 
+                                                       target="_blank" class="badge bg-danger text-decoration-none">
+                                                        T1110
+                                                    </a>
+                                                </td>
+                                                <td>Credential Access</td>
+                                                <td><span class="badge rounded-pill bg-warning">Medium</span></td>
+                                            </tr>
+                                            <tr class="technique-row" data-technique-id="T1059" data-bs-toggle="tooltip" title="Click for more details">
+                                                <td>Command and Scripting Interpreter</td>
+                                                <td>
+                                                    <a href="https://attack.mitre.org/techniques/T1059/" 
+                                                       target="_blank" class="badge bg-danger text-decoration-none">
+                                                        T1059
+                                                    </a>
+                                                </td>
+                                                <td>Execution</td>
+                                                <td><span class="badge rounded-pill bg-warning">Medium</span></td>
+                                            </tr>
+                                            <tr class="technique-row" data-technique-id="T1041" data-bs-toggle="tooltip" title="Click for more details">
+                                                <td>Exfiltration Over C2 Channel</td>
+                                                <td>
+                                                    <a href="https://attack.mitre.org/techniques/T1041/" 
+                                                       target="_blank" class="badge bg-danger text-decoration-none">
+                                                        T1041
+                                                    </a>
+                                                </td>
+                                                <td>Exfiltration</td>
+                                                <td><span class="badge rounded-pill bg-success">High</span></td>
+                                            </tr>
+                                        {% endif %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-md-5">
+                            <div class="card" id="techniqueDetail">
+                                <div class="card-header bg-dark text-white">
+                                    <h6 class="mb-0">Technique Details</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="noTechniqueSelected">
+                                        <p class="text-muted">Select a technique from the table to see details.</p>
+                                    </div>
+                                    <div id="techniqueDetails" style="display: none;">
+                                        <h5 id="techniqueName">Network Service Scanning</h5>
+                                        <span class="badge bg-danger mb-2" id="techniqueId">T1046</span>
+                                        <p id="techniqueDescription">Adversaries may attempt to get a listing of services running on remote hosts and local network infrastructure devices.</p>
+                                        
+                                        <h6 class="mt-3">Indicators</h6>
+                                        <ul class="list-group list-group-flush" id="techniqueIndicators">
+                                            <li class="list-group-item">Multiple connection attempts to different ports</li>
+                                            <li class="list-group-item">SYN scans detected in network traffic</li>
+                                        </ul>
+                                        
+                                        <h6 class="mt-3">Mitigations</h6>
+                                        <ul class="list-group list-group-flush" id="techniqueMitigations">
+                                            <li class="list-group-item">Filter network traffic to only allow authorized ports</li>
+                                            <li class="list-group-item">Implement network scanning detection tools</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h6><i class="fas fa-chart-line"></i> Attack Progression</h6>
+                <div class="attack-progression mb-3">
+                    <div class="progress" style="height: 30px;">
+                        <div class="progress-bar bg-danger" role="progressbar" style="width: 20%" 
+                             aria-valuenow="20" aria-valuemin="0" aria-valuemax="100">Reconnaissance</div>
+                        <div class="progress-bar bg-warning" role="progressbar" style="width: 20%" 
+                             aria-valuenow="20" aria-valuemin="0" aria-valuemax="100">Initial Access</div>
+                        <div class="progress-bar bg-info" role="progressbar" style="width: 20%" 
+                             aria-valuenow="20" aria-valuemin="0" aria-valuemax="100">Execution</div>
+                        <div class="progress-bar bg-primary" role="progressbar" style="width: 20%" 
+                             aria-valuenow="20" aria-valuemin="0" aria-valuemax="100">Persistence</div>
+                        <div class="progress-bar bg-success" role="progressbar" style="width: 20%" 
+                             aria-valuenow="20" aria-valuemin="0" aria-valuemax="100">Exfiltration</div>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <a href="https://attack.mitre.org/" target="_blank" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-external-link-alt"></i> MITRE ATT&CK Framework
+                    </a>
+                    <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#exportModal">
+                        <i class="fas fa-file-export"></i> Export Report
+                    </button>
                 </div>
                 {% else %}
                 <div class="alert alert-info">
                     <p>Select an attack path to see MITRE ATT&CK framework mapping.</p>
+                    <a href="/analysis" class="btn btn-primary btn-sm mt-2">
+                        <i class="fas fa-chart-line"></i> View Analysis Results
+                    </a>
                 </div>
                 {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Technique Details Modal -->
+<div class="modal fade" id="techniqueModal" tabindex="-1" aria-labelledby="techniqueModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="techniqueModalLabel">Technique Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modalTechniqueDetails">
+                    <!-- Will be filled dynamically -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="#" id="viewMitreLink" target="_blank" class="btn btn-primary">
+                    View on MITRE ATT&CK
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export Modal -->
+<div class="modal fade" id="exportModal" tabindex="-1" aria-labelledby="exportModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="exportModalLabel">Export Attack Path Report</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Choose the export format for your attack path analysis:</p>
+                <div class="list-group">
+                    <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-file-pdf text-danger"></i> PDF Report
+                            <small class="d-block text-muted">Comprehensive report with all details</small>
+                        </div>
+                        <span class="badge bg-primary rounded-pill">Coming soon</span>
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-file-csv text-success"></i> CSV Format
+                            <small class="d-block text-muted">Tabular data for analysis</small>
+                        </div>
+                        <span class="badge bg-primary rounded-pill">Coming soon</span>
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-file-code text-info"></i> JSON Format
+                            <small class="d-block text-muted">Machine-readable format for integration</small>
+                        </div>
+                        <span class="badge bg-primary rounded-pill">Coming soon</span>
+                    </a>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             </div>
         </div>
     </div>
