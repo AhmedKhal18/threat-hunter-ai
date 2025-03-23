@@ -1,10 +1,6 @@
 import os
 import json
 import logging
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage
 from config import Config
 
 # Configure logging
@@ -13,9 +9,23 @@ logger = logging.getLogger(__name__)
 # Initialize OpenAI API key
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", Config.OPENAI_API_KEY)
 
+# Initialize OpenAI client
+openai_client = None
+if OPENAI_API_KEY:
+    try:
+        import openai
+        openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        logger.info("OpenAI client initialized successfully")
+    except ImportError:
+        logger.error("Failed to import openai package")
+    except Exception as e:
+        logger.error(f"Error initializing OpenAI client: {e}")
+else:
+    logger.warning("OpenAI API key not found")
+
 def analyze_logs(logs, model_name="gpt-4o"):
     """
-    Analyze security logs using GPT-4 via LangChain.
+    Analyze security logs using GPT-4 via the OpenAI API.
     
     Args:
         logs (list): List of log dictionaries
@@ -25,7 +35,7 @@ def analyze_logs(logs, model_name="gpt-4o"):
         dict: Analysis results including summary, threat level, and recommendations
     """
     try:
-        if not OPENAI_API_KEY:
+        if not OPENAI_API_KEY or not openai_client:
             logger.error("OpenAI API key not found")
             return {
                 "summary": "Error: OpenAI API key not configured",
@@ -33,15 +43,6 @@ def analyze_logs(logs, model_name="gpt-4o"):
                 "recommended_actions": "Configure OpenAI API key to enable analysis",
                 "error": "API key missing"
             }
-        
-        # Initialize LangChain chat model
-        # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
-        # do not change this unless explicitly requested by the user
-        chat_model = ChatOpenAI(
-            model_name=model_name,
-            temperature=0.3,
-            openai_api_key=OPENAI_API_KEY
-        )
         
         # Prepare logs for analysis
         log_text = format_logs_for_analysis(logs)
@@ -68,24 +69,28 @@ def analyze_logs(logs, model_name="gpt-4o"):
         Provide your analysis in JSON format.
         """
         
-        # Create messages
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=human_prompt)
-        ]
-        
-        # Get the response
-        response = chat_model(messages)
+        # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
+        # do not change this unless explicitly requested by the user
+        response = openai_client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": human_prompt}
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"}
+        )
         
         # Parse the JSON response
         try:
-            analysis_result = json.loads(response.content)
+            content = response.choices[0].message.content
+            analysis_result = json.loads(content)
             logger.info("Successfully analyzed logs with GPT-4")
             return analysis_result
         except json.JSONDecodeError:
             logger.error("Failed to parse GPT-4 response as JSON")
             # Try to extract a JSON object if it's embedded in other text
-            text = response.content
+            text = content
             try:
                 # Find JSON-like content between curly braces
                 start_idx = text.find('{')
@@ -100,10 +105,10 @@ def analyze_logs(logs, model_name="gpt-4o"):
             
             # Return a fallback analysis
             return {
-                "summary": response.content[:500] + "...",  # Truncate if too long
+                "summary": text[:500] + "...",  # Truncate if too long
                 "threat_level": "Unknown",
                 "recommended_actions": "Error in AI response format. Please review the raw analysis.",
-                "raw_analysis": response.content
+                "raw_analysis": text
             }
             
     except Exception as e:
@@ -168,7 +173,7 @@ def format_logs_for_analysis(logs):
 
 def identify_attack_patterns(logs):
     """
-    Use LangChain and GPT-4 to identify specific attack patterns in logs.
+    Use OpenAI API to identify specific attack patterns in logs.
     
     Args:
         logs (list): List of log dictionaries
@@ -177,48 +182,55 @@ def identify_attack_patterns(logs):
         list: Identified attack patterns
     """
     try:
-        # Create a specialized prompt for pattern recognition
-        prompt = PromptTemplate(
-            input_variables=["logs"],
-            template="""
-            You are a cybersecurity pattern recognition expert. Review these security logs and identify specific attack patterns or techniques.
-            For each pattern, provide:
-            1. Pattern name and MITRE ATT&CK technique ID if applicable
-            2. Confidence level (Low, Medium, High)
-            3. Supporting evidence from the logs
-            4. Potential false positive considerations
-            
-            Logs:
-            {logs}
-            
-            Format your response as a JSON array of identified patterns.
-            """
-        )
-        
-        # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
-        # do not change this unless explicitly requested by the user
-        chat_model = ChatOpenAI(
-            model_name="gpt-4o",
-            temperature=0.2,
-            openai_api_key=OPENAI_API_KEY
-        )
-        
-        # Create the chain
-        chain = LLMChain(llm=chat_model, prompt=prompt)
+        if not OPENAI_API_KEY or not openai_client:
+            logger.error("OpenAI API key not found")
+            return [{"pattern": "Error", "confidence": "Low", "evidence": "OpenAI API key not configured"}]
         
         # Format logs
         log_text = format_logs_for_analysis(logs)
         
-        # Run the chain
-        response = chain.run(logs=log_text)
+        # Create the system prompt for pattern recognition
+        system_prompt = """You are a cybersecurity pattern recognition expert. Review these security logs and identify specific attack patterns or techniques.
+        For each pattern, provide:
+        1. Pattern name and MITRE ATT&CK technique ID if applicable
+        2. Confidence level (Low, Medium, High)
+        3. Supporting evidence from the logs
+        4. Potential false positive considerations
+        
+        Format your response as a JSON array of identified patterns.
+        """
+        
+        # Create the human message with logs
+        human_prompt = f"""Review these security logs and identify specific attack patterns:
+
+        {log_text}
+        
+        Provide your analysis as a JSON array.
+        """
+        
+        # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
+        # do not change this unless explicitly requested by the user
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": human_prompt}
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"}
+        )
         
         # Parse the response
         try:
-            patterns = json.loads(response)
+            content = response.choices[0].message.content
+            patterns = json.loads(content)
+            # If it's a nested JSON object with a patterns key, extract just the patterns
+            if isinstance(patterns, dict) and "patterns" in patterns:
+                patterns = patterns["patterns"]
             return patterns
         except json.JSONDecodeError:
             logger.error("Failed to parse pattern recognition response as JSON")
-            return [{"pattern": "Error parsing response", "confidence": "Low", "evidence": response[:100] + "..."}]
+            return [{"pattern": "Error parsing response", "confidence": "Low", "evidence": content[:100] + "..."}]
         
     except Exception as e:
         logger.error(f"Error identifying attack patterns: {e}")

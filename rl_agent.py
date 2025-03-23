@@ -1,32 +1,39 @@
 import os
-import gym
-import numpy as np
 import logging
 import json
-import pickle
 import time
 import random
+import numpy as np
 from datetime import datetime
-from gym import spaces
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 from config import Config
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-class ThreatHuntingEnv(gym.Env):
+class SimpleObservationSpace:
+    """A simple class to replace gym.spaces.Box"""
+    def __init__(self, low, high, shape=None, dtype=np.float32):
+        self.low = low
+        self.high = high
+        self.shape = shape if shape is not None else low.shape
+        self.dtype = dtype
+
+class SimpleActionSpace:
+    """A simple class to replace gym.spaces.Discrete"""
+    def __init__(self, n):
+        self.n = n
+        
+    def sample(self):
+        return random.randint(0, self.n - 1)
+
+class ThreatHuntingEnv:
     """
-    Custom Environment for threat hunting using reinforcement learning.
+    Simplified Environment for threat hunting using RL concepts.
     This environment simulates a network where the agent needs to identify and respond to threats.
     """
     metadata = {'render.modes': ['human']}
     
     def __init__(self, logs=None):
-        super(ThreatHuntingEnv, self).__init__()
-        
         # Load logs if provided, otherwise generate simulated logs
         self.logs = logs if logs is not None else []
         if not self.logs:
@@ -52,7 +59,7 @@ class ThreatHuntingEnv(gym.Env):
         # Define the observation space
         # We'll use a combination of features extracted from logs
         # Features: alert_severity, is_internal_src, is_internal_dst, port_risk, protocol_risk
-        self.observation_space = spaces.Box(
+        self.observation_space = SimpleObservationSpace(
             low=np.array([0, 0, 0, 0, 0]), 
             high=np.array([5, 1, 1, 1, 1]),
             dtype=np.float32
@@ -60,7 +67,7 @@ class ThreatHuntingEnv(gym.Env):
         
         # Define the action space
         # Actions: ignore, flag for review, block source, block destination, collect more data
-        self.action_space = spaces.Discrete(5)
+        self.action_space = SimpleActionSpace(5)
         
         # Environment state
         self.current_log_index = 0
@@ -337,7 +344,7 @@ class ThreatHuntingEnv(gym.Env):
 
 def train_agent(iterations=10000, session_id=None):
     """
-    Train the reinforcement learning agent.
+    Simplified training function for the RL agent. This version doesn't use stable-baselines3.
     
     Args:
         iterations (int): Number of training iterations
@@ -347,71 +354,113 @@ def train_agent(iterations=10000, session_id=None):
         dict: Training results
     """
     try:
-        logger.info(f"Starting RL agent training with {iterations} iterations")
+        logger.info(f"Starting simplified RL agent training with {iterations} iterations")
         
         # Create the environment
-        def make_env():
-            from log_generator import generate_suricata_logs
-            logs = generate_suricata_logs(200)
-            return ThreatHuntingEnv(logs=logs)
-        
-        env = DummyVecEnv([make_env])
-        
-        # Create evaluation environment
-        eval_env = DummyVecEnv([make_env])
+        from log_generator import generate_suricata_logs
+        logs = generate_suricata_logs(200)
+        env = ThreatHuntingEnv(logs=logs)
         
         # Set up model directory
         model_dir = os.path.join(Config.RL_MODEL_DIR, f"model_{session_id}")
         os.makedirs(model_dir, exist_ok=True)
         
-        # Callbacks
-        eval_callback = EvalCallback(
-            eval_env,
-            best_model_save_path=model_dir,
-            log_path=model_dir,
-            eval_freq=max(iterations // 10, 1),
-            deterministic=True,
-            render=False
-        )
+        # Initialize training metrics
+        episodes = 0
+        total_reward = 0
+        best_reward = float('-inf')
+        rewards = []
+        f1_scores = []
         
-        checkpoint_callback = CheckpointCallback(
-            save_freq=max(iterations // 5, 1),
-            save_path=model_dir,
-            name_prefix=f"ppo_threat_hunter_{session_id}"
-        )
+        # Simple epsilon-greedy policy
+        epsilon = 1.0  # Initial exploration rate
+        epsilon_min = 0.1
+        epsilon_decay = 0.995
         
-        # Initialize the agent with PPO algorithm
-        model = PPO(
-            "MlpPolicy", 
-            env, 
-            verbose=1,
-            tensorboard_log=model_dir,
-            learning_rate=0.0003
-        )
+        # Simple Q-table (very simplified RL approach)
+        observation_dim = env.observation_space.shape[0]
+        action_dim = env.action_space.n
         
-        # Train the agent
+        # Initialize Q-table (discretized for simplicity)
+        bins_per_dim = 5
+        q_table = np.zeros([bins_per_dim] * observation_dim + [action_dim])
+        
+        # Helper function to discretize observations
+        def discretize(observation):
+            # Convert continuous observation to discrete indices for q_table
+            scaled = observation / env.observation_space.high
+            indices = np.minimum((scaled * bins_per_dim).astype(int), bins_per_dim - 1)
+            return tuple(indices)
+        
+        # Start training
         start_time = time.time()
-        model.learn(
-            total_timesteps=iterations,
-            callback=[eval_callback, checkpoint_callback]
-        )
+        
+        for i in range(iterations):
+            obs = env.reset()
+            episode_reward = 0
+            done = False
+            
+            while not done:
+                # Epsilon-greedy action selection
+                if random.random() < epsilon:
+                    action = env.action_space.sample()  # Random action
+                else:
+                    state_idx = discretize(obs)
+                    action = np.argmax(q_table[state_idx])
+                
+                # Take action and observe result
+                next_obs, reward, done, info = env.step(action)
+                episode_reward += reward
+                
+                # Update Q-table (simplified)
+                if not done:
+                    state_idx = discretize(obs)
+                    next_state_idx = discretize(next_obs)
+                    
+                    # Simple Q-learning update
+                    alpha = 0.1  # Learning rate
+                    gamma = 0.99  # Discount factor
+                    q_table[state_idx][action] = (1 - alpha) * q_table[state_idx][action] + \
+                                               alpha * (reward + gamma * np.max(q_table[next_state_idx]))
+                
+                obs = next_obs
+            
+            # Record metrics
+            episodes += 1
+            total_reward += episode_reward
+            rewards.append(episode_reward)
+            f1_scores.append(info['f1_score'])
+            
+            # Decay exploration rate
+            epsilon = max(epsilon_min, epsilon * epsilon_decay)
+            
+            # Save best "model" (in this case, just the q_table)
+            if episode_reward > best_reward:
+                best_reward = episode_reward
+                np.save(os.path.join(model_dir, 'q_table.npy'), q_table)
+                
+            # Log progress
+            if (i + 1) % max(iterations // 10, 1) == 0:
+                avg_reward = total_reward / episodes
+                logger.info(f"Iteration {i+1}/{iterations}, Avg Reward: {avg_reward:.2f}, Epsilon: {epsilon:.2f}")
+                episodes = 0
+                total_reward = 0
+        
         training_time = time.time() - start_time
         
-        # Save the final model
-        final_model_path = os.path.join(model_dir, f"final_model.zip")
-        model.save(final_model_path)
-        
-        # Evaluate the trained model
-        mean_reward, std_reward = evaluate_policy(model, eval_env, n_eval_episodes=10)
-        
         # Save training stats
+        final_model_path = os.path.join(model_dir, 'q_table.npy')
+        mean_reward = np.mean(rewards[-100:]) if rewards else 0
+        std_reward = np.std(rewards[-100:]) if rewards else 0
+        
         stats = {
             "session_id": session_id,
             "iterations": iterations,
             "mean_reward": float(mean_reward),
             "std_reward": float(std_reward),
             "training_time": training_time,
-            "model_path": final_model_path
+            "model_path": final_model_path,
+            "final_f1_score": float(np.mean(f1_scores[-100:])) if f1_scores else 0
         }
         
         with open(os.path.join(model_dir, "training_stats.json"), "w") as f:
@@ -426,7 +475,7 @@ def train_agent(iterations=10000, session_id=None):
         return {
             "session_id": session_id,
             "error": str(e),
-            "final_reward": 0.0,
+            "mean_reward": 0.0,
             "model_path": None
         }
 
@@ -450,106 +499,77 @@ def evaluate_agent(model_path=None):
         # Create evaluation environment with different data
         from log_generator import generate_suricata_logs
         eval_logs = generate_suricata_logs(100)
-        
-        # Also add multi-stage attack logs for more realistic evaluation
-        from log_generator import generate_multi_stage_attack_logs
-        attack_logs = generate_multi_stage_attack_logs(stages=3, logs_per_stage=5)
-        eval_logs.extend(attack_logs)
-        
         env = ThreatHuntingEnv(logs=eval_logs)
         
-        # Load the trained model
-        model = PPO.load(model_path)
+        # Load the Q-table
+        q_table = np.load(model_path)
         
-        # Run evaluation
-        episodes = 5
-        results = {
-            "episodes": episodes,
-            "episode_data": [],
-            "overall": {
-                "true_positives": 0,
-                "false_positives": 0,
-                "true_negatives": 0,
-                "false_negatives": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "f1_score": 0.0,
-                "blocked_ips": 0,
-                "flagged_logs": 0
-            }
-        }
+        # Helper function to discretize observations
+        bins_per_dim = 5
+        def discretize(observation):
+            # Convert continuous observation to discrete indices for q_table
+            scaled = observation / env.observation_space.high
+            indices = np.minimum((scaled * bins_per_dim).astype(int), bins_per_dim - 1)
+            return tuple(indices)
         
-        for episode in range(episodes):
+        # Evaluate for several episodes
+        n_episodes = 10
+        total_reward = 0
+        all_f1_scores = []
+        all_precision = []
+        all_recall = []
+        
+        for i in range(n_episodes):
             obs = env.reset()
-            done = False
             episode_reward = 0
-            steps = 0
+            done = False
             
             while not done:
-                action, _ = model.predict(obs, deterministic=True)
+                # Select action using the Q-table
+                state_idx = discretize(obs)
+                action = np.argmax(q_table[state_idx])
+                
+                # Take action
                 obs, reward, done, info = env.step(action)
                 episode_reward += reward
-                steps += 1
             
-            # Collect episode data
-            episode_data = {
-                "episode": episode + 1,
-                "reward": float(episode_reward),
-                "steps": steps,
-                "true_positives": env.true_positives,
-                "false_positives": env.false_positives,
-                "true_negatives": env.true_negatives,
-                "false_negatives": env.false_negatives,
-                "precision": env._calculate_precision(),
-                "recall": env._calculate_recall(),
-                "f1_score": env._calculate_f1_score(),
-                "blocked_ips": len(env.blocked_ips),
-                "flagged_logs": len(env.flagged_logs)
-            }
-            results["episode_data"].append(episode_data)
-            
-            # Accumulate overall stats
-            results["overall"]["true_positives"] += env.true_positives
-            results["overall"]["false_positives"] += env.false_positives
-            results["overall"]["true_negatives"] += env.true_negatives
-            results["overall"]["false_negatives"] += env.false_negatives
-            results["overall"]["blocked_ips"] += len(env.blocked_ips)
-            results["overall"]["flagged_logs"] += len(env.flagged_logs)
+            # Record metrics
+            total_reward += episode_reward
+            all_f1_scores.append(info['f1_score'])
+            all_precision.append(info['precision'])
+            all_recall.append(info['recall'])
         
-        # Calculate overall metrics
-        tp = results["overall"]["true_positives"]
-        fp = results["overall"]["false_positives"]
-        fn = results["overall"]["false_negatives"]
+        # Calculate average metrics
+        mean_reward = total_reward / n_episodes
+        mean_f1 = np.mean(all_f1_scores)
+        mean_precision = np.mean(all_precision)
+        mean_recall = np.mean(all_recall)
         
-        # Prevent division by zero
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+        logger.info(f"Evaluation completed. Mean reward: {mean_reward:.2f}")
         
-        results["overall"]["precision"] = precision
-        results["overall"]["recall"] = recall
-        results["overall"]["f1_score"] = f1
-        
-        logger.info(f"Evaluation completed. F1 Score: {f1:.4f}")
-        
-        return results
+        # Return metrics
+        return {
+            "mean_reward": float(mean_reward),
+            "f1_score": float(mean_f1),
+            "precision": float(mean_precision),
+            "recall": float(mean_recall),
+            "model_path": model_path
+        }
         
     except Exception as e:
         logger.error(f"Error evaluating RL agent: {e}")
         return {"error": str(e)}
 
 if __name__ == "__main__":
-    # Test the environment
+    # Example usage
     env = ThreatHuntingEnv()
+    print(f"Created environment with {len(env.logs)} logs")
+    
+    # Test a few steps
     obs = env.reset()
-    print(f"Observation shape: {obs.shape}")
-    
-    # Test a random action
-    action = env.action_space.sample()
-    obs, reward, done, info = env.step(action)
-    print(f"Action: {action}, Reward: {reward}")
-    env.render()
-    
-    # Test training with a small number of iterations
-    result = train_agent(iterations=100, session_id=9999)
-    print(f"Training result: {result}")
+    for _ in range(5):
+        action = env.action_space.sample()
+        next_obs, reward, done, info = env.step(action)
+        env.render()
+        if done:
+            break
