@@ -71,11 +71,12 @@ def analysis():
 
 @app.route('/analysis/run', methods=['POST'])
 def run_analysis():
-    """Trigger log analysis using LangChain + GPT-4."""
+    """Trigger log analysis using OpenAI + Threat Intelligence."""
     try:
         # Get logs for analysis (either all or filtered by time/severity)
         hours = request.form.get('hours', 24, type=int)
         min_severity = request.form.get('min_severity', 1, type=int)
+        use_threat_intel = request.form.get('use_threat_intel', 'true') == 'true'
         
         # Query logs based on filters
         from datetime import datetime, timedelta
@@ -106,31 +107,54 @@ def run_analysis():
             for log in logs
         ]
         
-        # Run analysis
-        analysis_result = analyze_logs(log_dicts)
+        # Run analysis with threat intelligence
+        analysis_result = analyze_logs(log_dicts, use_threat_intel=use_threat_intel)
         
-        # Save analysis to database
+        # Initialize threat details as empty JSON
+        threat_details = "{}"
+        
+        # Extract threat intelligence findings if available
+        if 'threat_intel_findings' in analysis_result:
+            threat_details = json.dumps(analysis_result['threat_intel_findings'])
+        
+        # Save analysis to database with enhanced fields
         new_analysis = Analysis(
             summary=analysis_result['summary'],
             threat_level=analysis_result['threat_level'],
-            recommended_actions=analysis_result['recommended_actions'],
-            log_ids=','.join([str(log.id) for log in logs])
+            recommended_actions=analysis_result.get('recommended_actions', 'No specific recommendations'),
+            log_ids=','.join([str(log.id) for log in logs]),
+            threat_details=threat_details
         )
         db.session.add(new_analysis)
         
         # Create attack paths if any were found
         if 'attack_paths' in analysis_result and analysis_result['attack_paths']:
             for path in analysis_result['attack_paths']:
-                new_path = AttackPath(
-                    path_data=json.dumps(path['path']),
-                    severity=path['severity'],
-                    description=path['description'],
-                    analysis_id=new_analysis.id
-                )
-                db.session.add(new_path)
-                
-                # Create Neo4j visualization
-                create_attack_path_graph(path)
+                # Ensure path has necessary fields
+                if isinstance(path, dict) and 'path' in path:
+                    new_path = AttackPath(
+                        path_data=json.dumps(path['path']),
+                        severity=path.get('severity', 'Medium'),
+                        description=path.get('description', 'Attack path detected'),
+                        analysis_id=new_analysis.id,
+                        mitre_techniques=json.dumps(path.get('techniques', []))
+                    )
+                    db.session.add(new_path)
+                    
+                    # Create Neo4j visualization
+                    try:
+                        create_attack_path_graph(path)
+                    except Exception as e:
+                        logger.error(f"Error creating Neo4j visualization: {e}")
+        
+        # Add MITRE ATT&CK techniques if available
+        if 'attack_patterns' in analysis_result:
+            # This would normally be saved to a separate table
+            # For now, we'll add it to the analysis summary
+            techniques = [f"{pattern.get('name', 'Unknown')}: {pattern.get('mitre_id', 'No ID')}" 
+                         for pattern in analysis_result.get('attack_patterns', [])]
+            technique_summary = ", ".join(techniques)
+            new_analysis.summary += f"\n\nMITRE ATT&CK Techniques: {technique_summary}"
         
         db.session.commit()
         return redirect(url_for('analysis'))

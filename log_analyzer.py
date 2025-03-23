@@ -23,13 +23,14 @@ if OPENAI_API_KEY:
 else:
     logger.warning("OpenAI API key not found")
 
-def analyze_logs(logs, model_name="gpt-4o"):
+def analyze_logs(logs, model_name="gpt-4o", use_threat_intel=True):
     """
-    Analyze security logs using GPT-4 via the OpenAI API.
+    Analyze security logs using GPT-4 via the OpenAI API and threat intelligence.
     
     Args:
         logs (list): List of log dictionaries
         model_name (str): OpenAI model to use
+        use_threat_intel (bool): Whether to enhance analysis with threat intelligence
         
     Returns:
         dict: Analysis results including summary, threat level, and recommendations
@@ -44,29 +45,65 @@ def analyze_logs(logs, model_name="gpt-4o"):
                 "error": "API key missing"
             }
         
+        # Run threat intelligence analysis if enabled
+        threat_intel_results = None
+        if use_threat_intel:
+            try:
+                from threat_intelligence import detect_threats_in_logs, suggest_mitigations, correlate_with_global_threats
+                threat_intel_results = detect_threats_in_logs(logs)
+                logger.info(f"Threat intelligence detected {len(threat_intel_results)} potential threats")
+            except ImportError:
+                logger.warning("Threat intelligence module not available")
+            except Exception as e:
+                logger.error(f"Error in threat intelligence analysis: {e}")
+                
         # Prepare logs for analysis
         log_text = format_logs_for_analysis(logs)
         
+        # Add threat intel findings to the prompt if available
+        threat_intel_text = ""
+        if threat_intel_results:
+            threat_intel_text = "Threat Intelligence Findings:\n\n"
+            for i, threat in enumerate(threat_intel_results, 1):
+                threat_intel_text += f"Threat #{i}:\n"
+                threat_intel_text += f"  Type: {threat.get('threat_type', 'Unknown')}\n"
+                threat_intel_text += f"  Indicator: {threat.get('indicator', 'Unknown')}\n"
+                threat_intel_text += f"  Confidence: {threat.get('confidence', 'Unknown')}\n"
+                threat_intel_text += f"  Suggested Action: {threat.get('action', 'Investigate')}\n"
+                if 'details' in threat and isinstance(threat['details'], dict):
+                    for k, v in threat['details'].items():
+                        if k != 'indicators' and not isinstance(v, (dict, list)):
+                            threat_intel_text += f"  {k}: {v}\n"
+                threat_intel_text += "\n"
+        
         # Create the system prompt for log analysis
-        system_prompt = """You are an advanced cybersecurity threat analysis AI. You're tasked with analyzing security logs to identify potential threats, 
-        attack patterns, and security incidents. Provide a concise analysis that includes:
+        system_prompt = """You are an advanced cybersecurity threat analysis AI with expertise in MITRE ATT&CK framework, 
+        malware analysis, and network security. You're tasked with analyzing security logs and threat intelligence to identify 
+        potential threats, attack patterns, and security incidents. Provide a comprehensive analysis that includes:
 
         1. A summary of the key findings
         2. The overall threat level (Critical, High, Medium, Low, Informational)
-        3. Specific attack patterns or techniques identified (with MITRE ATT&CK references if applicable)
-        4. Recommended actions to respond to or mitigate the threats
-        5. Potential attack paths if multiple related events are detected
+        3. Specific attack patterns or techniques identified (with MITRE ATT&CK references including technique IDs)
+        4. Recommended actions to respond to or mitigate the threats, prioritized by urgency
+        5. Potential attack paths if multiple related events are detected, including likely entry points and targets
+        6. Adversary tactics and techniques observed, mapped to the MITRE ATT&CK framework
 
         Focus on correlating events across logs to identify multi-stage attacks and provide context that would help security analysts prioritize their response.
-        Format your response as a structured JSON object with the following keys: summary, threat_level, attack_patterns, recommended_actions, and attack_paths.
+        Consider threat intelligence findings when determining threat severity and recommendations.
+        
+        Format your response as a structured JSON object with the following keys: 
+        summary, threat_level, attack_patterns, recommended_actions, attack_paths, and adversary_tactics.
         """
         
-        # Create the human message with logs
-        human_prompt = f"""Analyze the following security logs and provide your assessment:
+        # Create the human message with logs and threat intel
+        human_prompt = f"""Analyze the following security logs and threat intelligence findings:
 
+        === SECURITY LOGS ===
         {log_text}
 
-        Provide your analysis in JSON format.
+        {threat_intel_text if threat_intel_text else ""}
+        
+        Provide your analysis in JSON format. Be specific in your recommendations and include MITRE ATT&CK technique IDs where relevant.
         """
         
         # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
@@ -86,7 +123,31 @@ def analyze_logs(logs, model_name="gpt-4o"):
             content = response.choices[0].message.content
             analysis_result = json.loads(content)
             logger.info("Successfully analyzed logs with GPT-4")
+            
+            # Enhance with global threat intelligence if available
+            if use_threat_intel and 'correlate_with_global_threats' in globals():
+                try:
+                    enhanced_result = correlate_with_global_threats(analysis_result)
+                    logger.info("Enhanced analysis with global threat intelligence")
+                    analysis_result = enhanced_result
+                except Exception as e:
+                    logger.error(f"Error enhancing analysis with global threats: {e}")
+            
+            # Add threat intelligence findings to the result
+            if threat_intel_results:
+                analysis_result['threat_intel_findings'] = threat_intel_results
+                
+                # Add mitigation suggestions from threat intelligence
+                try:
+                    mitigations = suggest_mitigations(threat_intel_results)
+                    if mitigations:
+                        analysis_result['mitigation_suggestions'] = mitigations
+                        logger.info("Added mitigation suggestions from threat intelligence")
+                except Exception as e:
+                    logger.error(f"Error generating mitigation suggestions: {e}")
+            
             return analysis_result
+            
         except json.JSONDecodeError:
             logger.error("Failed to parse GPT-4 response as JSON")
             # Try to extract a JSON object if it's embedded in other text

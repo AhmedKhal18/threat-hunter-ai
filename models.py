@@ -25,6 +25,7 @@ class Analysis(db.Model):
     threat_level = db.Column(db.String(20))
     recommended_actions = db.Column(db.Text)
     log_ids = db.Column(db.Text)  # Comma-separated list of log IDs that were analyzed
+    threat_details = db.Column(db.Text)  # JSON formatted threat intelligence findings
     
     def __repr__(self):
         return f"<Analysis {self.id}: {self.threat_level}>"
@@ -37,6 +38,7 @@ class AttackPath(db.Model):
     severity = db.Column(db.String(20))
     description = db.Column(db.Text)
     analysis_id = db.Column(db.Integer, db.ForeignKey('analysis.id'))
+    mitre_techniques = db.Column(db.Text)  # JSON list of MITRE ATT&CK techniques
     
     def __repr__(self):
         return f"<AttackPath {self.id}: {self.severity}>"
